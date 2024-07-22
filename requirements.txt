@@ -1,0 +1,4 @@
+aiohttp==3.9.5
+bio==1.7.1
+pillow==10.4.0
+reflex-image-zoom==0.0.2
