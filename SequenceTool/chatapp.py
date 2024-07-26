@@ -9,7 +9,8 @@ import json
 models_dict = {
     "QuWen-v1.5": "@cf/qwen/qwen1.5-14b-chat-awq",
     "OpenChat-v3.5": "@cf/openchat/openchat-3.5-0106",
-    "LLAMA3": "@cf/meta/llama-3-8b-instruct"
+    "LLaMA3": "@cf/meta/llama-3-8b-instruct",
+    "LLaMA3.1 !New": "@cf/meta/llama-3.1-8b-instruct",
 }
 
 
@@ -32,7 +33,6 @@ class ChatState(rx.State):
                 self.question = ""
             # Construct the post request to the API.
             model = models_dict[self.model]
-            ### use your true account-id and api-key instead xxx
             async with session.post(
                 f"https://api.cloudflare.com/client/v4/accounts/xxx/ai/run/{
                     model}",
@@ -119,12 +119,19 @@ def qa(question: str, answer: str) -> rx.Component:
 
 def chat() -> rx.Component:
     return rx.container(
+        rx.box(
+            rx.callout("Kindly be aware that this chatbot is intended purely for leisure purposes and should not be relied upon for any substantial tasks due to its potential instability and unreliability. Additionally, I apologize but chat history is not currently supported; kindly manage your conversation history manually, please.Only QuWen can support Chinese!!",
+                       icon="info", color_scheme="blue"),
+            width="100%",
+            class_name="mb-2"
+        ),
         rx.center(
             rx.select(
                 [
                     "QuWen-v1.5",
                     "OpenChat-v3.5",
-                    "LLAMA3"
+                    "LLaMA3",
+                    "LLaMA3.1 !New",
                 ],
                 default_value=ChatState.model,
                 radius="large",
@@ -134,7 +141,7 @@ def chat() -> rx.Component:
             ),
             width="100%"
         ),
-        rx.scroll_area(
+        rx.flex(
             rx.center(
                 rx.box(
                     rx.foreach(
@@ -144,9 +151,8 @@ def chat() -> rx.Component:
                     width='60%',
                 ),
             ),
-            class_name="mt-14",
+            class_name="mt-14 min-h-[40vh]",
             type='hover',
-            height='64vh',
         ),
         rx.center(
             rx.text_area(

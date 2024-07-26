@@ -3,6 +3,9 @@ import reflex as rx
 from Bio.Seq import reverse_complement
 from Bio import Align
 from Bio.Align import substitution_matrices
+from pathlib import Path
+import datetime
+import os
 
 
 async def fetch(session, url, params):
@@ -161,3 +164,26 @@ async def get_picture_CF(account_id, api_token, model, prompts, nprompts, w, h, 
                 return data
             else:
                 return None
+
+
+def get_file_create_time(filename):
+    file = Path(os.path.join("Contents", filename))
+    return datetime.datetime.fromtimestamp(file.stat().st_ctime).strftime("%Y-%m-%d")
+
+
+async def read_markdown_file(filename):
+    with open(os.path.join("Contents", filename), "r") as f:
+        return f.read()
+
+
+def get_title(markdownContent):
+    for line in markdownContent.splitlines():
+        if line.strip().startswith("#"):
+            return line.strip().replace("#", "").strip()
+
+
+async def get_all_markdown_files():
+    file_items = [[f, os.path.getctime(os.path.join(
+        "Contents", f))] for f in os.listdir("Contents") if f.endswith(".md")]
+    sorted_files = sorted(file_items, key=lambda x: x[1], reverse=True)
+    return [file for file, _ in sorted_files]

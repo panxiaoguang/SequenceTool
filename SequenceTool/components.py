@@ -26,6 +26,11 @@ def navbar() -> rx.Component:
                     href="/aichat",
                     color_scheme="gray"
                 ),
+                rx.link(
+                    "Blogs",
+                    href="/Blog",
+                    color_scheme="gray"
+                ),
                 spacing="5"
             ),
             align_items="center",
@@ -48,32 +53,18 @@ def footer_item(text: str, href: str) -> rx.Component:
     return rx.link(rx.text(text, size="3"), href=href)
 
 
-def footer_items_1() -> rx.Component:
-    return rx.flex(
-        rx.heading(
-            "PRODUCTS", size="4", weight="bold", as_="h3"
-        ),
-        footer_item("Web Design", "/#"),
-        footer_item("Web Development", "/#"),
-        footer_item("E-commerce", "/#"),
-        footer_item("Content Management", "/#"),
-        footer_item("Mobile Apps", "/#"),
-        spacing="4",
-        text_align=["center", "center", "start"],
-        flex_direction="column",
-    )
-
-
-def footer_items_2() -> rx.Component:
+def footer_items() -> rx.Component:
     return rx.flex(
         rx.heading(
             "RESOURCES", size="4", weight="bold", as_="h3"
         ),
-        footer_item("Blog", "/#"),
-        footer_item("Case Studies", "/#"),
-        footer_item("Whitepapers", "/#"),
-        footer_item("Webinars", "/#"),
-        footer_item("E-books", "/#"),
+        footer_item("ResearchGate",
+                    "https://www.researchgate.net/profile/Xiaoguang-Pan"),
+        footer_item("Github", "https://github.com/panxiaoguang"),
+        footer_item("Zhihu", "https://zhihu.com/people/luo-tian-bao-92"),
+        footer_item(
+            "Blog", "/Blog/"),
+        footer_item("Bilibili", "https://space.bilibili.com/6078012"),
         spacing="4",
         text_align=["center", "center", "start"],
         flex_direction="column",
@@ -86,10 +77,7 @@ def social_link(icon: str, href: str) -> rx.Component:
 
 def socials() -> rx.Component:
     return rx.flex(
-        social_link("instagram", "/#"),
-        social_link("twitter", "/#"),
-        social_link("facebook", "/#"),
-        social_link("linkedin", "/#"),
+        social_link("github", "https://github.com/panxiaoguang"),
         spacing="3",
         justify="end",
         width="100%",
@@ -128,8 +116,7 @@ def footer() -> rx.Component:
                         "start",
                     ],
                 ),
-                footer_items_1(),
-                footer_items_2(),
+                footer_items(),
                 justify="between",
                 spacing="6",
                 flex_direction=["column", "column", "row"],

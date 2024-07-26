@@ -26,7 +26,6 @@ class Paint(rx.State):
     async def paint(self):
         self.show_progress = True
         yield
-        ### use your true account-id and api-key instead xxx
         loading_picture = await get_picture_CF("xxx", "xxx", model_dict[self.model], self.prompt, self.nprompt, self.width, self.height, self.nsteps, self.cfg_scale)
         if loading_picture is not None:
             self.image = Image.open(io.BytesIO(loading_picture))
