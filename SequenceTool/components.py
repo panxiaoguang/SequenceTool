@@ -26,11 +26,6 @@ def navbar() -> rx.Component:
                     href="/aichat",
                     color_scheme="gray"
                 ),
-                rx.link(
-                    "Blogs",
-                    href="/Blog",
-                    color_scheme="gray"
-                ),
                 spacing="5"
             ),
             align_items="center",
@@ -63,7 +58,7 @@ def footer_items() -> rx.Component:
         footer_item("Github", "https://github.com/panxiaoguang"),
         footer_item("Zhihu", "https://zhihu.com/people/luo-tian-bao-92"),
         footer_item(
-            "Blog", "/Blog/"),
+            "Blog", "https://xiaohanys.top"),
         footer_item("Bilibili", "https://space.bilibili.com/6078012"),
         spacing="4",
         text_align=["center", "center", "start"],
@@ -139,6 +134,9 @@ def footer() -> rx.Component:
             width="100%",
         ),
         width="100%",
-        class_name=rx.color_mode_cond(light="p-4 bg-slate-100",
-                                      dark="p-4 bg-neutral-800"),
+        class_name="p-4",
+        backdrop_filter="auto",
+        backdrop_blur="lg",
+        background_color=rx.color("mauve", 2)
     )
+

@@ -3,195 +3,310 @@
 
 import reflex as rx
 from .layout import template
-import aiohttp
-import json
+from openai import OpenAI
 
-models_dict = {
-    "QuWen-v1.5": "@cf/qwen/qwen1.5-14b-chat-awq",
-    "OpenChat-v3.5": "@cf/openchat/openchat-3.5-0106",
-    "LLaMA3": "@cf/meta/llama-3-8b-instruct",
-    "LLaMA3.1 !New": "@cf/meta/llama-3.1-8b-instruct",
-}
+
+class QA(rx.Base):
+    """A question and answer pair."""
+
+    question: str
+    answer: str
 
 
 class ChatState(rx.State):
-    """The app state."""
-    chat_history: list[tuple[str, str]]
-    _messages = [{"role": "system", "content": "You are a smart and versatile artificial intelligence assistant. You will faithfully follow the user's instructions to solve and answer questions. Your answers are detailed and professional, and they do not contain offensive information."}]
+    """The app ChatState."""
+
+    # A dict from the chat name to the list of questions and answers.
+    chats: list[QA] = []
+
+    # The current question.
     question: str
-    model: str = "QuWen-v1.5"
-    Generation: bool = False
 
-    @rx.background
-    async def get_answer(self):
-        async with aiohttp.ClientSession() as session:
-            answer = ""
-            async with self:
-                self._messages.append(
-                    {"role": "user", "content": self.question})
-                self.chat_history.append((self.question, answer))
-                self.question = ""
-            # Construct the post request to the API.
-            model = models_dict[self.model]
-            async with session.post(
-                f"https://api.cloudflare.com/client/v4/accounts/xxx/ai/run/{
-                    model}",
-                headers={
-                    "Authorization": "Bearer xxx",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "messages": self.get_value(self._messages),
-                    "stream": True,
-                    "max_tokens": 2048
-                }
-            ) as response:
-                if response.status == 200:
-                    async for line in response.content:
-                        async with self:
-                            if not self.Generation:
-                                return
-                        decoded_line = line.decode('utf-8').strip()
-                        if decoded_line.startswith('data: '):
-                            json_data = decoded_line[len('data: '):]
-                            # Handle the JSON data.
-                            if decoded_line == 'data: [DONE]':
-                                async with self:
-                                    self.Generation = not self.Generation
-                                    self._messages.append(
-                                        {"role": "assistant", "content": answer})
-                                    return
-                            else:
-                                data = json.loads(json_data)
-                                answer += data.get('response')
-                                async with self:
-                                    self.chat_history[-1] = (
-                                        self.chat_history[-1][0], answer)
-                                    # push the final response to the role of system
+    # Whether we are processing the question.
+    processing: bool = False
+
+    models: list[str] = ["Qwen/Qwen2.5-7B-Instruct",
+                         "Qwen/Qwen2.5-Coder-7B-Instruct",
+                         "meta-llama/Meta-Llama-3.1-8B-Instruct"]
+
+    # Default model
+    model: str = "Qwen/Qwen2.5-7B-Instruct"
+
+    apikey: str = rx.LocalStorage("")
+
+    warning: bool = False
+
+    def create_chat(self):
+        """Create a new chat."""
+        # Add the new chat to the list of chats.
+        self.chats = []
+        self.processing = False
+
+    def close_warning(self):
+        self.warning = False
+
+    async def process_question(self, form_data: dict[str, str]):
+        question = form_data["question"]
+        if question == "":
+            return
+        if self.apikey != "":
+            # Get the question from the form
+            # Check if the question is empty
+
+            model = self.openai_process_question
+
+            async for value in model(question):
+                yield value
+        else:
+            self.warning = True
+            yield
+
+    async def openai_process_question(self, question: str):
+        """Get the response from the API.
+
+        Args:
+            form_data: A dict with the current question.
+        """
+        clients = OpenAI(
+            base_url='https://api.siliconflow.cn/v1',
+            api_key=self.apikey
+        )
+        # Add the question to the list of questions.
+        qa = QA(question=question, answer="")
+        self.chats.append(qa)
+
+        # Clear the input and start the processing.
+        self.processing = True
+        yield
+
+        # Build the messages.
+        messages = [
+            {
+                "role": "system",
+                "content": "You are a friendly chatbot named Reflex. Respond in markdown.",
+            }
+        ]
+        for qa in self.chats:
+            messages.append({"role": "user", "content": qa.question})
+            messages.append({"role": "assistant", "content": qa.answer})
+
+        # Remove the last mock answer.
+        messages = messages[:-1]
+
+        # Start a new session to answer the question.
+        session = clients.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            stream=True,
+        )
+
+        # Stream the results, yielding after every word.
+        for item in session:
+            if hasattr(item.choices[0].delta, "content"):
+                answer_text = item.choices[0].delta.content
+                # Ensure answer_text is not None before concatenation
+                if answer_text is not None:
+                    self.chats[-1].answer += answer_text
                 else:
-                    async with self:
-                        self.chat_history[-1] = (self.chat_history[-1][0],
-                                                 f"Failed to fetch data: {response.status}")
+                    # Handle the case where answer_text is None, perhaps log it or assign a default value
+                    # For example, assigning an empty string if answer_text is None
+                    answer_text = ""
+                    self.chats[-1].answer += answer_text
+                self.chats = self.chats
+                yield
 
-    def clear_answer(self):
-        self.chat_history = []
-        self._messages = [{"role": "system", "content": "You are a smart and versatile artificial intelligence assistant. You will faithfully follow the user's instructions to solve and answer questions. Your answers are detailed and professional, and they do not contain offensive information."}]
-
-    def toggle_running(self):
-        self.Generation = not self.Generation
-        if self.Generation:
-            return ChatState.get_answer()
+        # Toggle the processing flag.
+        self.processing = False
 
 
-def qa(question: str, answer: str) -> rx.Component:
-    component_style = {
-        "h1": lambda text: rx.heading(
-            text, size="5", margin_y="1em"
-        ),
-        "h2": lambda text: rx.heading(
-            text, size="3", margin_y="1em"
-        ),
-        "h3": lambda text: rx.heading(
-            text, size="1", margin_y="1em"
-        ),
-        "p": lambda text: rx.text(
-            text, margin_y="1em"
-        ),
-        "code": lambda text: rx.code(text, color="orange", weight="bold"),
-        "codeblock": lambda text, **props: rx.code_block(
-            text, **props, theme="light", margin_y="1em", wrap_long_lines=True,
-        ),
-        "a": lambda text, **props: rx.link(
-            text, **props, color="blue", _hover={"color": "orange"}
-        ),
-    }
-    return rx.box(
-        rx.box(
-            rx.heading("You:", size="3", class_name="mt-1 font-semibold"),
-            rx.markdown(question, component_map=component_style),
-        ),
-        rx.box(
-            rx.heading("Bot:", size="3", class_name="mt-1 font-semibold"),
-            rx.markdown(answer, component_map=component_style),
+message_style = dict(display="inline-block", padding="1em", border_radius="8px",
+                     max_width=["30em", "30em", "50em", "50em", "50em", "50em"])
+
+
+def set_apikey() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.trigger(rx.button(rx.icon(tag="settings"),
+                          variant="ghost", color_scheme="gray")),
+        rx.dialog.content(
+            rx.dialog.title("Set your API key"),
+            rx.dialog.description(
+                rx.text("Please find you API key from SiliconFlow:"),
+                rx.link("https://cloud.siliconflow.cn/",
+                        href="https://cloud.siliconflow.cn/"),
+                size="2",
+                margin_bottom="16px",
+            ),
+            rx.flex(
+                rx.text(
+                    "SiliconFlow API Key:",
+                    as_="div",
+                    size="2",
+                    margin_bottom="4px",
+                    weight="bold",
+                ),
+                rx.input(
+                    value=ChatState.apikey,
+                    placeholder="SiliconFlow API Key",
+                    on_change=ChatState.set_apikey
+                ),
+                direction="column",
+                spacing="3",
+            ),
+            rx.flex(
+                rx.dialog.close(
+                    rx.button(
+                        "Cancel",
+                        color_scheme="gray",
+                        variant="soft",
+                    ),
+                ),
+                rx.dialog.close(
+                    rx.button("Save", on_click=ChatState.close_warning),
+                ),
+                spacing="3",
+                margin_top="16px",
+                justify="end",
+            ),
         ),
     )
 
 
-def chat() -> rx.Component:
-    return rx.container(
-        rx.box(
-            rx.callout("Kindly be aware that this chatbot is intended purely for leisure purposes and should not be relied upon for any substantial tasks due to its potential instability and unreliability. Additionally, I apologize but chat history is not currently supported; kindly manage your conversation history manually, please.Only QuWen can support Chinese!!",
-                       icon="info", color_scheme="blue"),
-            width="100%",
-            class_name="mb-2"
-        ),
-        rx.center(
-            rx.select(
-                [
-                    "QuWen-v1.5",
-                    "OpenChat-v3.5",
-                    "LLaMA3",
-                    "LLaMA3.1 !New",
-                ],
-                default_value=ChatState.model,
-                radius="large",
-                width="200px",
-                on_change=ChatState.set_model,
+def message(qa: QA) -> rx.Component:
+    """A single question/answer message.
 
+    Args:
+        qa: The question/answer pair.
+
+    Returns:
+        A component displaying the question/answer pair.
+    """
+    return rx.box(
+        rx.box(
+            rx.markdown(
+                qa.question,
+                background_color=rx.color("mauve", 4),
+                color=rx.color("mauve", 12),
+                **message_style,
             ),
-            width="100%"
+            text_align="right",
+            margin_top="1em",
         ),
-        rx.flex(
-            rx.center(
-                rx.box(
-                    rx.foreach(
-                        ChatState.chat_history,
-                        lambda messages: qa(messages[0], messages[1]),
+        rx.box(
+            rx.markdown(
+                qa.answer,
+                background_color=rx.color("accent", 4),
+                color=rx.color("accent", 12),
+                **message_style,
+            ),
+            text_align="left",
+            padding_top="1em",
+        ),
+        width="100%",
+    )
+
+
+def chat() -> rx.Component:
+    """List all the messages in a single conversation."""
+    return rx.vstack(
+        rx.box(rx.foreach(ChatState.chats, message), width="100%"),
+        py="8",
+        flex="1",
+        width="100%",
+        max_width="50em",
+        padding_x="4px",
+        align_self="center",
+        overflow="hidden",
+        padding_bottom="5em",
+    )
+
+
+def action_bar() -> rx.Component:
+    """The action bar to send a new message."""
+    return rx.center(
+        rx.vstack(
+            rx.hstack(
+                rx.form(
+                    rx.hstack(
+                        rx.input(
+                            rx.input.slot(
+                                rx.tooltip(
+                                    rx.icon("info", size=18),
+                                    content="Enter a question to get a response.",
+                                )
+                            ),
+                            placeholder="Type something...",
+                            id="question",
+                            width=["15em", "20em", "45em",
+                                   "50em", "50em", "50em"],
+                        ),
+                        rx.button(
+                            rx.cond(
+                                ChatState.processing,
+                                rx.spinner(size="3"),
+                                rx.text("Send"),
+                            ),
+                            type="submit",
+                            is_disabled=ChatState.processing,
+                        ),
+                        align_items="center",
                     ),
-                    width='60%',
+                    on_submit=ChatState.process_question,
+                    reset_on_submit=True,
                 ),
+                rx.button(rx.text("New Chat"), on_click=ChatState.create_chat)
             ),
-            class_name="mt-14 min-h-[40vh]",
-            type='hover',
+            rx.text(
+                "ReflexGPT may return factually incorrect or misleading responses. Use discretion.",
+                text_align="center",
+                font_size=".75em",
+                color=rx.color("mauve", 10),
+            ),
+            align_items="center",
         ),
-        rx.center(
-            rx.text_area(
-                placeholder="Ask a question",
-                value=ChatState.question,
-                on_change=ChatState.set_question,
-                width="600px",
-                auto_height=True,
-            ),
-            rx.button(
-                rx.cond(
-                    ~ChatState.Generation,
-                    "Generate",
-                    "Stop"
-                ),
-                height="4.5em",
-                width="6.5em",
-                variant="soft",
-                radius="medium",
-                _hover={"cursor": "pointer"},
-                on_click=ChatState.toggle_running,
-            ),
-            rx.button(
-                "New Chat",
-                height="4.5em",
-                width="6.5em",
-                radius="medium",
-                on_click=ChatState.clear_answer,
-                _hover={"cursor": "pointer"},
-                color_scheme="iris",
-            ),
-            spacing="1",
-            width="100%",
-            class_name="pt-4"
-        )
+        position="sticky",
+        bottom="0",
+        left="0",
+        padding_y="16px",
+        backdrop_filter="auto",
+        backdrop_blur="lg",
+        border_top=f"1px solid {rx.color('mauve', 3)}",
+        background_color=rx.color("mauve", 2),
+        align_items="stretch",
+        width="100%",
+    )
+
+
+def select_model() -> rx.Component:
+    return rx.center(
+        rx.select(
+            ChatState.models,
+            default_value=ChatState.model,
+            on_change=ChatState.set_model,
+            variant="soft",
+            radius="full",
+            width="30%",
+        ),
+        set_apikey(),
+        class_name="p-2",
+        spacing="3"
     )
 
 
 @rx.page("/aichat")
 @template
 def aichat() -> rx.Component:
-    return chat()
+    return rx.vstack(
+        rx.cond(ChatState.warning,
+                rx.callout("Access denied. Please set your API key!",
+                           icon="triangle_alert",
+                           color_scheme="red",
+                           role="alert",),
+                rx.flex(),
+                ),
+        select_model(),
+        chat(),
+        action_bar(),
+        min_height="100vh",
+        align_items="stretch",
+        spacing="0",
+    )
